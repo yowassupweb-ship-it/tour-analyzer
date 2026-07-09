@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import type { Recommendation, TourProduct, TourVerdict } from "@/lib/types";
 import { StatTile } from "@/components/StatTile";
+import { Tabs } from "@/components/Tabs";
 
 const REC_LABEL: Record<Recommendation, string> = {
   keep: "Оставить",
@@ -92,7 +93,10 @@ type SortKey = "name" | "sold" | "seats" | "ratio" | "recommendation";
 
 const RANK: Record<Recommendation, number> = { remove_cannibal: 0, remove_zero: 1, keep: 2 };
 
+type ViewMode = "insights" | "table";
+
 export function ResultPanel({ verdicts }: { verdicts: TourVerdict[] }) {
+  const [view, setView] = useState<ViewMode>("insights");
   const [filter, setFilter] = useState<Recommendation | "all">("all");
   const [query, setQuery] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("recommendation");
@@ -173,129 +177,153 @@ export function ResultPanel({ verdicts }: { verdicts: TourVerdict[] }) {
         />
       </div>
 
-      {clusters.length > 0 && (
-        <div className="card p-6 flex flex-col gap-4">
-          <div>
-            <h2 className="text-[15px] font-semibold">Группы каннибализации — кого оставить ({clusters.length})</h2>
-            <p className="text-[12px] mt-1" style={{ color: "var(--text-muted)" }}>
-              Туры сгруппированы по пересечению дат отправления и схожести маршрута. Внутри группы оставлен тур с
-              наибольшими продажами, остальные — кандидаты на удаление.
-            </p>
-          </div>
-          <div className="flex flex-col gap-3">
-            {clusters.map((members) => (
-              <ClusterCard key={members.map((m) => m.id).join(",")} members={members} verdictById={verdictById} />
-            ))}
-          </div>
-        </div>
-      )}
+      <Tabs
+        tabs={[
+          { key: "insights", label: "Выводы" },
+          { key: "table", label: "Таблица" },
+        ]}
+        active={view}
+        onChange={setView}
+      />
 
-      {standaloneRemoveZero.length > 0 && (
-        <div className="card p-6 flex flex-col gap-4">
-          <div>
-            <h2 className="text-[15px] font-semibold">Без продаж, вне групп каннибализации ({standaloneRemoveZero.length})</h2>
-            <p className="text-[12px] mt-1" style={{ color: "var(--text-muted)" }}>
-              Ни разу не куплены, и конкурирующего тура на эти же даты не найдено — проблема в спросе, а не в
-              конкуренции с другим туром
-            </p>
-          </div>
-          <div className="flex flex-col gap-2">
-            {standaloneRemoveZero.map((v) => (
-              <StandaloneCard key={v.product.id} verdict={v} />
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className="card p-6 flex flex-col gap-4">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div>
-            <h2 className="text-[15px] font-semibold">Полный список туров ({fullList.length})</h2>
-            <p className="text-[12px] mt-1" style={{ color: "var(--text-muted)" }}>
-              Что было и что с этим делать — по каждому туру
-            </p>
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Поиск по названию или маршруту"
-              className="text-[13px] px-3 py-1.5 rounded-lg outline-none"
-              style={{ background: "var(--surface-2)", border: "1px solid var(--border-hairline)", color: "var(--text-primary)" }}
-            />
-            <select
-              value={filter}
-              onChange={(e) => setFilter(e.target.value as Recommendation | "all")}
-              className="text-[13px] px-3 py-1.5 rounded-lg outline-none"
-              style={{ background: "var(--surface-2)", border: "1px solid var(--border-hairline)", color: "var(--text-primary)" }}
-            >
-              <option value="all">Все решения</option>
-              <option value="keep">Оставить</option>
-              <option value="remove_cannibal">Удалить — каннибализация</option>
-              <option value="remove_zero">Удалить — нет продаж</option>
-            </select>
-          </div>
-        </div>
-
-        <div className="overflow-x-auto -mx-2">
-          <table className="w-full text-[13px] border-collapse table-fixed min-w-[820px]">
-            <colgroup>
-              <col style={{ width: "34%" }} />
-              <col style={{ width: "10%" }} />
-              <col style={{ width: "10%" }} />
-              <col style={{ width: "10%" }} />
-              <col style={{ width: "16%" }} />
-              <col style={{ width: "20%" }} />
-            </colgroup>
-            <thead>
-              <tr style={{ borderBottom: "1px solid var(--border-hairline)" }}>
-                {headers.map((h) => (
-                  <th
-                    key={h.key}
-                    onClick={() => toggleSort(h.key)}
-                    className={`font-medium px-2 py-2 cursor-pointer select-none whitespace-nowrap ${
-                      h.key === "name" ? "text-left" : "text-right"
-                    }`}
-                    style={{ color: "var(--text-muted)" }}
-                  >
-                    {h.label}
-                    {sortKey === h.key ? (sortDir === 1 ? " ↑" : " ↓") : ""}
-                  </th>
-                ))}
-                <th className="text-left font-medium px-2 py-2" style={{ color: "var(--text-muted)" }}>
-                  Причина
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {fullList.map((v) => (
-                <tr key={v.product.id} style={{ borderBottom: "1px solid var(--gridline)" }}>
-                  <td className="px-2 py-2 min-w-0">
-                    <div className="truncate font-medium">{v.product.name}</div>
-                    <div className="truncate text-[12px]" style={{ color: "var(--text-muted)" }} title={v.product.route}>
-                      #{v.product.id} · {v.product.route}
-                    </div>
-                  </td>
-                  <td className="tabular px-2 py-2 text-right">{v.product.seats}</td>
-                  <td className="tabular px-2 py-2 text-right">{v.product.sold}</td>
-                  <td className="tabular px-2 py-2 text-right font-medium">{(v.product.ratio * 100).toFixed(1)}%</td>
-                  <td className="px-2 py-2 text-right">
-                    <RecBadge recommendation={v.recommendation} />
-                  </td>
-                  <td className="px-2 py-2 text-[12px]" style={{ color: "var(--text-secondary)" }} title={v.reason}>
-                    <span className="line-clamp-2">{v.reason}</span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {fullList.length === 0 && (
-            <p className="text-center py-8 text-[13px]" style={{ color: "var(--text-muted)" }}>
-              Ничего не найдено
-            </p>
+      {view === "insights" && (
+        <>
+          {clusters.length === 0 && standaloneRemoveZero.length === 0 && (
+            <div className="card p-10 flex flex-col items-center gap-2 text-center">
+              <span className="text-[15px] font-medium">Проблем не найдено</span>
+              <span className="text-[13px]" style={{ color: "var(--text-secondary)" }}>
+                Нет групп каннибализации и туров без продаж при текущих настройках порогов.
+              </span>
+            </div>
           )}
+
+          {clusters.length > 0 && (
+            <div className="card p-6 flex flex-col gap-4">
+              <div>
+                <h2 className="text-[15px] font-semibold">Группы каннибализации — кого оставить ({clusters.length})</h2>
+                <p className="text-[12px] mt-1" style={{ color: "var(--text-muted)" }}>
+                  Туры сгруппированы по пересечению дат отправления и схожести маршрута. Внутри группы оставлен тур с
+                  наибольшими продажами, остальные — кандидаты на удаление.
+                </p>
+              </div>
+              <div className="flex flex-col gap-3">
+                {clusters.map((members) => (
+                  <ClusterCard key={members.map((m) => m.id).join(",")} members={members} verdictById={verdictById} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {standaloneRemoveZero.length > 0 && (
+            <div className="card p-6 flex flex-col gap-4">
+              <div>
+                <h2 className="text-[15px] font-semibold">Без продаж, вне групп каннибализации ({standaloneRemoveZero.length})</h2>
+                <p className="text-[12px] mt-1" style={{ color: "var(--text-muted)" }}>
+                  Ни разу не куплены, и конкурирующего тура на эти же даты не найдено — проблема в спросе, а не в
+                  конкуренции с другим туром
+                </p>
+              </div>
+              <div className="flex flex-col gap-2">
+                {standaloneRemoveZero.map((v) => (
+                  <StandaloneCard key={v.product.id} verdict={v} />
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {view === "table" && (
+        <div className="card p-6 flex flex-col gap-4">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <h2 className="text-[15px] font-semibold">Полный список туров ({fullList.length})</h2>
+              <p className="text-[12px] mt-1" style={{ color: "var(--text-muted)" }}>
+                Что было и что с этим делать — по каждому туру
+              </p>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Поиск по названию или маршруту"
+                className="text-[13px] px-3 py-1.5 rounded-lg outline-none"
+                style={{ background: "var(--surface-2)", border: "1px solid var(--border-hairline)", color: "var(--text-primary)" }}
+              />
+              <select
+                value={filter}
+                onChange={(e) => setFilter(e.target.value as Recommendation | "all")}
+                className="text-[13px] px-3 py-1.5 rounded-lg outline-none"
+                style={{ background: "var(--surface-2)", border: "1px solid var(--border-hairline)", color: "var(--text-primary)" }}
+              >
+                <option value="all">Все решения</option>
+                <option value="keep">Оставить</option>
+                <option value="remove_cannibal">Удалить — каннибализация</option>
+                <option value="remove_zero">Удалить — нет продаж</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto -mx-2">
+            <table className="w-full text-[13px] border-collapse table-fixed min-w-[820px]">
+              <colgroup>
+                <col style={{ width: "34%" }} />
+                <col style={{ width: "10%" }} />
+                <col style={{ width: "10%" }} />
+                <col style={{ width: "10%" }} />
+                <col style={{ width: "16%" }} />
+                <col style={{ width: "20%" }} />
+              </colgroup>
+              <thead>
+                <tr style={{ borderBottom: "1px solid var(--border-hairline)" }}>
+                  {headers.map((h) => (
+                    <th
+                      key={h.key}
+                      onClick={() => toggleSort(h.key)}
+                      className={`font-medium px-2 py-2 cursor-pointer select-none whitespace-nowrap ${
+                        h.key === "name" ? "text-left" : "text-right"
+                      }`}
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      {h.label}
+                      {sortKey === h.key ? (sortDir === 1 ? " ↑" : " ↓") : ""}
+                    </th>
+                  ))}
+                  <th className="text-left font-medium px-2 py-2" style={{ color: "var(--text-muted)" }}>
+                    Причина
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {fullList.map((v) => (
+                  <tr key={v.product.id} style={{ borderBottom: "1px solid var(--gridline)" }}>
+                    <td className="px-2 py-2 min-w-0">
+                      <div className="truncate font-medium">{v.product.name}</div>
+                      <div className="truncate text-[12px]" style={{ color: "var(--text-muted)" }} title={v.product.route}>
+                        #{v.product.id} · {v.product.route}
+                      </div>
+                    </td>
+                    <td className="tabular px-2 py-2 text-right">{v.product.seats}</td>
+                    <td className="tabular px-2 py-2 text-right">{v.product.sold}</td>
+                    <td className="tabular px-2 py-2 text-right font-medium">{(v.product.ratio * 100).toFixed(1)}%</td>
+                    <td className="px-2 py-2 text-right">
+                      <RecBadge recommendation={v.recommendation} />
+                    </td>
+                    <td className="px-2 py-2 text-[12px]" style={{ color: "var(--text-secondary)" }} title={v.reason}>
+                      <span className="line-clamp-2">{v.reason}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {fullList.length === 0 && (
+              <p className="text-center py-8 text-[13px]" style={{ color: "var(--text-muted)" }}>
+                Ничего не найдено
+              </p>
+            )}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
