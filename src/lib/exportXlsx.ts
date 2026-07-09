@@ -1,4 +1,5 @@
 import * as XLSX from "xlsx";
+import { stripRichText } from "./richText";
 import type { AnalysisResult, CannibalPair, TourProduct, TourVerdict } from "./types";
 
 const STATUS_LABEL: Record<TourVerdict["recommendation"], string> = {
@@ -19,7 +20,7 @@ function productRow(p: TourProduct, verdictById: Map<string, TourVerdict>) {
     "% продаж": Number((p.ratio * 100).toFixed(1)),
     "Первая дата": p.firstDate ?? "",
     "Последняя дата": p.lastDate ?? "",
-    ...(v ? { Решение: STATUS_LABEL[v.recommendation], Причина: v.reason } : {}),
+    ...(v ? { Решение: STATUS_LABEL[v.recommendation], Причина: stripRichText(v.reason) } : {}),
   };
 }
 

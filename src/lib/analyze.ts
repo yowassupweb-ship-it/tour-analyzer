@@ -175,6 +175,15 @@ function pluralDepartures(n: number): string {
   return n === 1 ? "отправление" : "отправлений";
 }
 
+// Lightweight inline markup for verdict reasons: **bold** for emphasis,
+// {{g:...}}/{{r:...}} for a good/bad-colored figure. Parsed into styled JSX
+// by lib/richText.tsx wherever a reason is shown, and stripped back to plain
+// text for the XLSX export.
+function statMarkup(tone: "g" | "r" | "b", sold: number, seats: number, ratio: number): string {
+  const text = `${sold} из ${seats} мест (${formatPct(ratio)})`;
+  return tone === "b" ? `**${text}**` : `{{${tone}:${text}}}`;
+}
+
 // Two tours can each show up as the closest competitor of a third without
 // directly overlapping themselves (A~B, B~C). Union-Find turns those chains
 // into one cluster, because they're really all fighting over the same slice
@@ -258,9 +267,9 @@ function buildVerdicts(products: TourProduct[], pairs: CannibalPair[], threshold
         return {
           product: p,
           recommendation: "keep",
-          reason: `Лидер среди ${members.length} похожих туров, конкурирующих за одни даты (${rivalNames.join(
+          reason: `Лидер среди **${members.length}** похожих туров, конкурирующих за одни даты (${rivalNames.join(
             ", "
-          )}). Продано ${p.sold} из ${p.seats} мест (${formatPct(p.ratio)}) — больше, чем у конкурентов.${zeroCaveat} Рекомендация: оставить как основной вариант, остальные из группы снять или объединить с этим туром.`,
+          )}). Продано ${statMarkup(p.sold === 0 ? "r" : "g", p.sold, p.seats, p.ratio)} — больше, чем у конкурентов.${zeroCaveat} Рекомендация: оставить как основной вариант, остальные из группы снять или объединить с этим туром.`,
           clusterId: root,
           clusterMembers: members,
           keptInstead: null,
@@ -272,9 +281,12 @@ function buildVerdicts(products: TourProduct[], pairs: CannibalPair[], threshold
         return {
           product: p,
           recommendation: "keep",
-          reason: `Конкурирует за тех же покупателей с «${survivor.name}» (#${survivor.id}, ${survivor.sold} продаж), но продажи у этого тура тоже в норме: ${p.sold} из ${p.seats} мест (${formatPct(
+          reason: `Конкурирует за тех же покупателей с «${survivor.name}» (#${survivor.id}, **${survivor.sold}** продаж), но продажи у этого тура тоже в норме: ${statMarkup(
+            "g",
+            p.sold,
+            p.seats,
             p.ratio
-          )}). Меньше, чем у «${survivor.name}», не значит слабо — оснований для удаления нет. Рекомендация: оставить оба, по возможности развести даты отправления, чтобы не пересекались.`,
+          )}. Меньше, чем у «${survivor.name}», не значит слабо — оснований для удаления нет. Рекомендация: оставить оба, по возможности развести даты отправления, чтобы не пересекались.`,
           clusterId: root,
           clusterMembers: members,
           keptInstead: null,
@@ -284,9 +296,12 @@ function buildVerdicts(products: TourProduct[], pairs: CannibalPair[], threshold
       return {
         product: p,
         recommendation: "remove_cannibal",
-        reason: `Конкурирует за тех же покупателей с «${survivor.name}» (#${survivor.id}), у которого больше продаж: ${survivor.sold} из ${survivor.seats} мест (${formatPct(
+        reason: `Конкурирует за тех же покупателей с «${survivor.name}» (#${survivor.id}), у которого больше продаж: ${statMarkup(
+          "g",
+          survivor.sold,
+          survivor.seats,
           survivor.ratio
-        )}) против ${p.sold} из ${p.seats} (${formatPct(p.ratio)}) у этого тура — заполняемость слишком низкая, чтобы держать оба. Рекомендация: снять с продажи или объединить с «${survivor.name}».`,
+        )} против ${statMarkup("r", p.sold, p.seats, p.ratio)} у этого тура — заполняемость слишком низкая, чтобы держать оба. Рекомендация: снять с продажи или объединить с «${survivor.name}».`,
         clusterId: root,
         clusterMembers: members,
         keptInstead: survivor,
@@ -298,7 +313,12 @@ function buildVerdicts(products: TourProduct[], pairs: CannibalPair[], threshold
       return {
         product: p,
         recommendation: "remove_zero",
-        reason: `За ${p.departures} ${pluralDepartures(p.departures)} (${period}) не продано ни одного места из ${p.seats} доступных. Конкурирующих туров на те же даты не найдено — проблема не в каннибализации, а в отсутствии спроса. Рекомендация: снять с продажи или пересмотреть маршрут/цену.`,
+        reason: `За **${p.departures}** ${pluralDepartures(p.departures)} (${period}) продано ${statMarkup(
+          "r",
+          p.sold,
+          p.seats,
+          p.ratio
+        )}. Конкурирующих туров на те же даты не найдено — проблема не в каннибализации, а в отсутствии спроса. Рекомендация: снять с продажи или пересмотреть маршрут/цену.`,
         clusterId: null,
         clusterMembers: [p],
         keptInstead: null,
@@ -308,9 +328,12 @@ function buildVerdicts(products: TourProduct[], pairs: CannibalPair[], threshold
     return {
       product: p,
       recommendation: "keep",
-      reason: `Продаётся без конфликтов: ${p.sold} из ${p.seats} мест (${formatPct(
+      reason: `Продаётся без конфликтов: ${statMarkup(
+        "g",
+        p.sold,
+        p.seats,
         p.ratio
-      )}), туров с пересечением дат и похожим маршрутом не найдено.`,
+      )}, туров с пересечением дат и похожим маршрутом не найдено.`,
       clusterId: null,
       clusterMembers: [p],
       keptInstead: null,

@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { Recommendation, TourProduct, TourVerdict } from "@/lib/types";
+import { parseRichText } from "@/lib/richText";
 import { StatTile } from "@/components/StatTile";
 import { Tabs } from "@/components/Tabs";
 
@@ -57,8 +58,8 @@ function ClusterCard({ members, verdictById }: { members: TourProduct[]; verdict
               <div className="tabular text-[12px] mt-0.5" style={{ color: "var(--text-secondary)" }}>
                 Продано {p.sold} из {p.seats} мест ({(p.ratio * 100).toFixed(1)}%)
               </div>
-              <p className="text-[13px] mt-1.5" style={{ color: "var(--text-secondary)" }}>
-                {verdict.reason}
+              <p className="text-[13px] mt-1.5 leading-relaxed" style={{ color: "var(--text-secondary)" }}>
+                {parseRichText(verdict.reason)}
               </p>
             </div>
           );
@@ -82,8 +83,8 @@ function StandaloneCard({ verdict }: { verdict: TourVerdict }) {
       <div className="text-[12px]" style={{ color: "var(--text-muted)" }}>
         #{p.id} · {p.route}
       </div>
-      <p className="text-[13px] mt-1" style={{ color: "var(--text-secondary)" }}>
-        {verdict.reason}
+      <p className="text-[13px] mt-1 leading-relaxed" style={{ color: "var(--text-secondary)" }}>
+        {parseRichText(verdict.reason)}
       </p>
     </div>
   );
@@ -318,7 +319,7 @@ export function ResultPanel({ verdicts }: { verdicts: TourVerdict[] }) {
                         className="line-clamp-2 cursor-help underline decoration-dotted underline-offset-2"
                         style={{ textDecorationColor: "var(--text-muted)" }}
                       >
-                        {v.reason}
+                        {parseRichText(v.reason)}
                       </span>
                       <div
                         className="invisible opacity-0 group-hover:visible group-hover:opacity-100 transition-opacity duration-150 pointer-events-none absolute z-30 right-0 top-full mt-2 w-96 max-w-[85vw] rounded-[var(--radius-md)] p-4 text-[13px] leading-relaxed"
@@ -329,7 +330,7 @@ export function ResultPanel({ verdicts }: { verdicts: TourVerdict[] }) {
                           boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
                         }}
                       >
-                        {v.reason}
+                        {parseRichText(v.reason)}
                       </div>
                     </td>
                   </tr>
