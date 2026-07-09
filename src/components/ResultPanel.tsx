@@ -234,6 +234,10 @@ export function ResultPanel({ verdicts }: { verdicts: TourVerdict[] }) {
       )}
 
       {view === "table" && (
+        // Break out of the page's centered max-w-6xl column — this table has
+        // six columns plus a free-text reason and reads far better with the
+        // full viewport width than boxed into the narrower report column.
+        <div className="w-screen relative left-1/2 right-1/2 -mx-[50vw] px-4 sm:px-8">
         <div className="card p-6 flex flex-col gap-4">
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div>
@@ -322,6 +326,7 @@ export function ResultPanel({ verdicts }: { verdicts: TourVerdict[] }) {
               </p>
             )}
           </div>
+        </div>
         </div>
       )}
     </div>
