@@ -313,8 +313,24 @@ export function ResultPanel({ verdicts }: { verdicts: TourVerdict[] }) {
                     <td className="px-2 py-2 text-right">
                       <RecBadge recommendation={v.recommendation} />
                     </td>
-                    <td className="px-2 py-2 text-[12px]" style={{ color: "var(--text-secondary)" }} title={v.reason}>
-                      <span className="line-clamp-2">{v.reason}</span>
+                    <td className="relative group px-2 py-2 text-[12px]" style={{ color: "var(--text-secondary)" }}>
+                      <span
+                        className="line-clamp-2 cursor-help underline decoration-dotted underline-offset-2"
+                        style={{ textDecorationColor: "var(--text-muted)" }}
+                      >
+                        {v.reason}
+                      </span>
+                      <div
+                        className="invisible opacity-0 group-hover:visible group-hover:opacity-100 transition-opacity duration-150 pointer-events-none absolute z-30 right-0 top-full mt-2 w-96 max-w-[85vw] rounded-[var(--radius-md)] p-4 text-[13px] leading-relaxed"
+                        style={{
+                          background: "var(--surface-1)",
+                          border: "1px solid var(--border-hairline)",
+                          color: "var(--text-secondary)",
+                          boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
+                        }}
+                      >
+                        {v.reason}
+                      </div>
                     </td>
                   </tr>
                 ))}

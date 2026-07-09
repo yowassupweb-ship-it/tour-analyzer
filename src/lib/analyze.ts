@@ -228,7 +228,14 @@ function pickBestOfCluster(members: TourProduct[]): TourProduct {
 // other into clusters and name the best seller in each the one to keep; a
 // standalone tour with zero sales is cut for lack of demand, not competition;
 // everything else is fine as-is.
-function buildVerdicts(products: TourProduct[], pairs: CannibalPair[]): TourVerdict[] {
+//
+// Losing the comparison inside a cluster isn't itself grounds for cutting a
+// tour — "Замковая кругосветка" outselling "Белорусский калейдоскоп" 22 to 16
+// doesn't mean the 16 is a dud, both are healthy. Only recommend removal for
+// a cluster's non-leader if its own sell-through is genuinely weak (tier
+// "none"/"low" on its own merits) — otherwise both are worth keeping and the
+// fix is to spread out departure dates, not cut one.
+function buildVerdicts(products: TourProduct[], pairs: CannibalPair[], thresholds: Thresholds): TourVerdict[] {
   const clusters = buildClusters(products, pairs);
 
   const membersById = new Map<string, { root: string; members: TourProduct[] }>();
@@ -260,12 +267,26 @@ function buildVerdicts(products: TourProduct[], pairs: CannibalPair[]): TourVerd
         };
       }
 
+      const ownTier = tierOf(p, thresholds);
+      if (ownTier === "medium" || ownTier === "good") {
+        return {
+          product: p,
+          recommendation: "keep",
+          reason: `Конкурирует за тех же покупателей с «${survivor.name}» (#${survivor.id}, ${survivor.sold} продаж), но продажи у этого тура тоже в норме: ${p.sold} из ${p.seats} мест (${formatPct(
+            p.ratio
+          )}). Меньше, чем у «${survivor.name}», не значит слабо — оснований для удаления нет. Рекомендация: оставить оба, по возможности развести даты отправления, чтобы не пересекались.`,
+          clusterId: root,
+          clusterMembers: members,
+          keptInstead: null,
+        };
+      }
+
       return {
         product: p,
         recommendation: "remove_cannibal",
         reason: `Конкурирует за тех же покупателей с «${survivor.name}» (#${survivor.id}), у которого больше продаж: ${survivor.sold} из ${survivor.seats} мест (${formatPct(
           survivor.ratio
-        )}) против ${p.sold} из ${p.seats} (${formatPct(p.ratio)}) у этого тура. Рекомендация: снять с продажи или объединить с «${survivor.name}».`,
+        )}) против ${p.sold} из ${p.seats} (${formatPct(p.ratio)}) у этого тура — заполняемость слишком низкая, чтобы держать оба. Рекомендация: снять с продажи или объединить с «${survivor.name}».`,
         clusterId: root,
         clusterMembers: members,
         keptInstead: survivor,
@@ -308,7 +329,7 @@ export function analyze(rows: RawRow[], thresholds: Thresholds = DEFAULT_THRESHO
   }
 
   const cannibalPairs = findCannibalPairs(products, thresholds.similarityMin);
-  const verdicts = buildVerdicts(products, cannibalPairs);
+  const verdicts = buildVerdicts(products, cannibalPairs, thresholds);
 
   const totals = products.reduce(
     (acc, p) => ({ seats: acc.seats + p.seats, sold: acc.sold + p.sold }),
