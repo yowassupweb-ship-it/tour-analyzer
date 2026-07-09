@@ -30,7 +30,11 @@ export type CannibalPair = {
   routeSim: number;
   score: number;
   sharedDates: number;
+  nearDates: number;
   minDepartures: number;
+  survivor: TourProduct;
+  victim: TourProduct;
+  salesBasis: boolean;
 };
 
 export type Thresholds = {

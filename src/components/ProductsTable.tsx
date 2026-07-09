@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { PerformanceTier, TourProduct } from "@/lib/types";
+import type { CannibalPair, PerformanceTier, TourProduct } from "@/lib/types";
 
 const TIER_LABEL: Record<PerformanceTier, string> = {
   good: "Хорошо",
@@ -52,15 +52,25 @@ export function ProductsTable({
   products,
   lowMax,
   mediumMax,
+  cannibalPairs = [],
 }: {
   products: TourProduct[];
   lowMax: number;
   mediumMax: number;
+  cannibalPairs?: CannibalPair[];
 }) {
   const [sortKey, setSortKey] = useState<SortKey>("ratio");
   const [sortDir, setSortDir] = useState<1 | -1>(-1);
   const [filter, setFilter] = useState<PerformanceTier | "all">("all");
   const [query, setQuery] = useState("");
+
+  const victimIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const pair of cannibalPairs) {
+      if (pair.sharedDates > 0) ids.add(pair.victim.id);
+    }
+    return ids;
+  }, [cannibalPairs]);
 
   const rows = useMemo(() => {
     let list = products.map((p) => ({ p, tier: tierOf(p, lowMax, mediumMax) }));
@@ -76,7 +86,7 @@ export function ProductsTable({
       return sortDir * ((av as number) - (bv as number));
     });
     return list;
-  }, [products, filter, query, sortKey, sortDir]);
+  }, [products, filter, query, sortKey, sortDir, lowMax, mediumMax]);
 
   function toggleSort(key: SortKey) {
     if (key === sortKey) setSortDir((d) => (d === 1 ? -1 : 1) as 1 | -1);
@@ -119,6 +129,7 @@ export function ProductsTable({
             {HEADERS.map((h) => (
               <col key={h.key} style={{ width: h.width }} />
             ))}
+            <col style={{ width: "10%" }} />
             <col style={{ width: "14%" }} />
           </colgroup>
           <thead>
@@ -139,24 +150,45 @@ export function ProductsTable({
               <th className="text-left font-medium px-2 py-2" style={{ color: "var(--text-muted)" }}>
                 Статус
               </th>
+              <th className="text-left font-medium px-2 py-2" style={{ color: "var(--text-muted)" }}>
+                Каннибализация
+              </th>
             </tr>
           </thead>
           <tbody>
-            {rows.map(({ p, tier }) => (
-              <tr key={p.id} style={{ borderBottom: "1px solid var(--gridline)" }}>
-                <td className="px-2 py-2 min-w-0">
-                  <div className="truncate font-medium">{p.name}</div>
-                  <div className="truncate text-[12px]" style={{ color: "var(--text-muted)" }} title={p.route}>
-                    {p.route}
-                  </div>
-                </td>
-                <td className="tabular px-2 py-2 text-right">{p.departures}</td>
-                <td className="tabular px-2 py-2 text-right">{p.seats}</td>
-                <td className="tabular px-2 py-2 text-right">{p.sold}</td>
-                <td className="tabular px-2 py-2 text-right font-medium">{(p.ratio * 100).toFixed(1)}%</td>
-                <td className="px-2 py-2">{tierBadge(tier)}</td>
-              </tr>
-            ))}
+            {rows.map(({ p, tier }) => {
+              const isVictim = victimIds.has(p.id);
+              return (
+                <tr key={p.id} style={{ borderBottom: "1px solid var(--gridline)" }}>
+                  <td className="px-2 py-2 min-w-0">
+                    <div className="truncate font-medium">{p.name}</div>
+                    <div className="truncate text-[12px]" style={{ color: "var(--text-muted)" }} title={p.route}>
+                      {p.route}
+                    </div>
+                  </td>
+                  <td className="tabular px-2 py-2 text-right">{p.departures}</td>
+                  <td className="tabular px-2 py-2 text-right">{p.seats}</td>
+                  <td className="tabular px-2 py-2 text-right">{p.sold}</td>
+                  <td className="tabular px-2 py-2 text-right font-medium">{(p.ratio * 100).toFixed(1)}%</td>
+                  <td className="px-2 py-2">{tierBadge(tier)}</td>
+                  <td className="px-2 py-2">
+                    {isVictim ? (
+                      <span
+                        className="text-[12px] font-medium px-2 py-0.5 rounded-full inline-block"
+                        style={{ color: "var(--status-critical)", background: "color-mix(in srgb, var(--status-critical) 14%, transparent)" }}
+                        title="Продаж меньше, чем у конкурирующего тура на те же даты — рекомендуется снять"
+                      >
+                        Снять
+                      </span>
+                    ) : (
+                      <span className="text-[12px]" style={{ color: "var(--text-muted)" }}>
+                        —
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
         {rows.length === 0 && (
