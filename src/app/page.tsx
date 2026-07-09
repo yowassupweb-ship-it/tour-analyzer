@@ -14,6 +14,7 @@ import { ProductsTable } from "@/components/ProductsTable";
 import { CannibalPanel } from "@/components/CannibalPanel";
 import { ResultPanel } from "@/components/ResultPanel";
 import { Tabs } from "@/components/Tabs";
+import { exportAnalysisToXlsx } from "@/lib/exportXlsx";
 
 const DEMO_SHEET_NAME = "Демо: Продажи";
 
@@ -105,16 +106,27 @@ export default function Home() {
           </p>
         </header>
 
-        <Tabs
-          tabs={[
-            { key: "result", label: "Результат" },
-            { key: "report", label: "Отчёт" },
-            { key: "cannibal", label: `Каннибализация${hasData ? ` (${analysis.cannibalPairs.length})` : ""}` },
-            { key: "settings", label: "Настройки" },
-          ]}
-          active={tab}
-          onChange={setTab}
-        />
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <Tabs
+            tabs={[
+              { key: "result", label: "Результат" },
+              { key: "report", label: "Отчёт" },
+              { key: "cannibal", label: `Каннибализация${hasData ? ` (${analysis.cannibalPairs.length})` : ""}` },
+              { key: "settings", label: "Настройки" },
+            ]}
+            active={tab}
+            onChange={setTab}
+          />
+          {hasData && (
+            <button
+              onClick={() => exportAnalysisToXlsx(analysis)}
+              className="text-[13px] font-medium px-3 py-1.5 rounded-lg"
+              style={{ background: "var(--surface-2)", border: "1px solid var(--border-hairline)" }}
+            >
+              Экспорт в Excel
+            </button>
+          )}
+        </div>
 
         {tab === "settings" && (
           <>
@@ -170,7 +182,11 @@ export default function Home() {
         )}
 
         {tab === "result" &&
-          (hasData ? <ResultPanel products={analysis.products} cannibalPairs={analysis.cannibalPairs} /> : <EmptyState />)}
+          (hasData ? (
+            <ResultPanel products={analysis.products} cannibalPairs={analysis.cannibalPairs} lowSales={analysis.tiers.low} />
+          ) : (
+            <EmptyState />
+          ))}
 
         {tab === "report" && (hasData ? (
           <>
@@ -178,7 +194,12 @@ export default function Home() {
               <TierChart tiers={analysis.tiers} />
               <SellersChart products={analysis.products} />
             </div>
-            <ProductsTable products={analysis.products} lowMax={thresholds.lowMax} mediumMax={thresholds.mediumMax} />
+            <ProductsTable
+              products={analysis.products}
+              lowMax={thresholds.lowMax}
+              mediumMax={thresholds.mediumMax}
+              cannibalPairs={analysis.cannibalPairs}
+            />
           </>
         ) : (
           <EmptyState />

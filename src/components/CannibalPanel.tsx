@@ -47,7 +47,8 @@ export function CannibalPanel({ pairs }: { pairs: CannibalPair[] }) {
             Кто кого каннибализирует ({pairs.length} {pairs.length === 1 ? "пара" : "пар"})
           </h2>
           <p className="text-[12px] mt-1" style={{ color: "var(--text-muted)" }}>
-            Признаки: совпадающие даты отправления (явная каннибализация) · схожесть маршрута. Туры, отличающиеся в
+            Признаки: совпадающие даты отправления (явная каннибализация) · отправления в пределах ±2 дней (мягкая
+            каннибализация — покупатель всё ещё выбирает между ними) · схожесть маршрута. Туры, отличающиеся в
             названии только числом дней (одна и та же поездка разной длительности), в список не попадают.
           </p>
         </div>
@@ -66,12 +67,13 @@ export function CannibalPanel({ pairs }: { pairs: CannibalPair[] }) {
         </p>
       ) : (
         <div className="overflow-x-auto -mx-2">
-          <table className="w-full text-[13px] border-collapse table-fixed min-w-[760px]">
+          <table className="w-full text-[13px] border-collapse table-fixed min-w-[960px]">
             <colgroup>
-              <col style={{ width: "34%" }} />
-              <col style={{ width: "34%" }} />
-              <col style={{ width: "16%" }} />
-              <col style={{ width: "16%" }} />
+              <col style={{ width: "24%" }} />
+              <col style={{ width: "24%" }} />
+              <col style={{ width: "12%" }} />
+              <col style={{ width: "20%" }} />
+              <col style={{ width: "20%" }} />
             </colgroup>
             <thead>
               <tr style={{ borderBottom: "1px solid var(--border-hairline)" }}>
@@ -101,19 +103,28 @@ export function CannibalPanel({ pairs }: { pairs: CannibalPair[] }) {
                   className="text-right font-medium px-2 py-2 cursor-pointer select-none whitespace-nowrap"
                   style={{ color: "var(--text-muted)" }}
                 >
-                  Совпадающих дат{sortKey === "sharedDates" ? (sortDir === 1 ? " ↑" : " ↓") : ""}
+                  Совпадения по датам{sortKey === "sharedDates" ? (sortDir === 1 ? " ↑" : " ↓") : ""}
+                </th>
+                <th className="text-left font-medium px-2 py-2" style={{ color: "var(--text-muted)" }}>
+                  Рекомендация
                 </th>
               </tr>
             </thead>
             <tbody>
               {rows.map((pair, i) => {
-                const explicit = pair.sharedDates > 0;
+                const exact = pair.sharedDates > 0;
+                const near = pair.nearDates > 0;
+                const explicit = exact || near;
                 return (
                   <tr
                     key={i}
                     style={{
                       borderBottom: "1px solid var(--gridline)",
-                      background: explicit ? "color-mix(in srgb, var(--status-critical) 6%, transparent)" : undefined,
+                      background: exact
+                        ? "color-mix(in srgb, var(--status-critical) 6%, transparent)"
+                        : near
+                        ? "color-mix(in srgb, var(--status-warning) 6%, transparent)"
+                        : undefined,
                     }}
                   >
                     <td className="px-2 py-2 min-w-0">
@@ -132,17 +143,47 @@ export function CannibalPanel({ pairs }: { pairs: CannibalPair[] }) {
                       {(pair.score * 100).toFixed(0)}%
                     </td>
                     <td className="px-2 py-2 text-right">
-                      {explicit ? (
+                      {exact && (
                         <span
                           className="tabular text-[12px] font-semibold px-2 py-0.5 rounded-full inline-block"
                           style={{ color: "var(--status-critical)", background: "color-mix(in srgb, var(--status-critical) 16%, transparent)" }}
                           title="Явная каннибализация: отправления в один день"
                         >
-                          {pair.sharedDates} из {pair.minDepartures}
+                          {pair.sharedDates} из {pair.minDepartures} в один день
                         </span>
-                      ) : (
+                      )}
+                      {near && (
+                        <span
+                          className="tabular text-[12px] font-semibold px-2 py-0.5 rounded-full inline-block ml-1"
+                          style={{ color: "var(--status-warning)", background: "color-mix(in srgb, var(--status-warning) 16%, transparent)" }}
+                          title="Мягкая каннибализация: отправления в пределах ±2 дней"
+                        >
+                          {pair.nearDates} рядом (±2 дня)
+                        </span>
+                      )}
+                      {!explicit && (
                         <span className="text-[12px]" style={{ color: "var(--text-muted)" }}>
                           0
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-2 py-2 min-w-0">
+                      {!explicit ? (
+                        <span className="text-[12px]" style={{ color: "var(--text-muted)" }}>
+                          —
+                        </span>
+                      ) : pair.salesBasis ? (
+                        <div className="text-[12px] leading-snug">
+                          <div style={{ color: "var(--status-good)" }}>
+                            Оставить: <span className="font-medium">{pair.survivor.name}</span> ({pair.survivor.sold} продано)
+                          </div>
+                          <div style={{ color: "var(--status-critical)" }}>
+                            Снять: <span className="font-medium">{pair.victim.name}</span> ({pair.victim.sold} продано)
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-[12px]" style={{ color: "var(--text-muted)" }}>
+                          Недостаточно оснований для выбора тура на снятие, нет продаж
                         </span>
                       )}
                     </td>
