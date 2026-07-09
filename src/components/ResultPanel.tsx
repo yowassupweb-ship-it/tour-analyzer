@@ -1,95 +1,74 @@
 "use client";
 
-import { useMemo } from "react";
-import type { CannibalPair, TourProduct } from "@/lib/types";
+import { useMemo, useState } from "react";
+import type { Recommendation, TourProduct, TourVerdict } from "@/lib/types";
+import { StatTile } from "@/components/StatTile";
 
-function opponentOf(pair: CannibalPair, productId: string): TourProduct {
-  return pair.a.id === productId ? pair.b : pair.a;
-}
+const REC_LABEL: Record<Recommendation, string> = {
+  keep: "Оставить",
+  remove_zero: "Удалить — нет продаж",
+  remove_cannibal: "Удалить — каннибализация",
+};
 
-function ZeroSalesCard({ p }: { p: TourProduct }) {
-  const period = p.firstDate && p.lastDate ? `${p.firstDate} — ${p.lastDate}` : "даты неизвестны";
+const REC_COLOR: Record<Recommendation, string> = {
+  keep: "var(--status-good)",
+  remove_zero: "var(--status-critical)",
+  remove_cannibal: "var(--status-warning)",
+};
+
+function RecBadge({ recommendation }: { recommendation: Recommendation }) {
+  const color = REC_COLOR[recommendation];
   return (
-    <div
-      className="rounded-[var(--radius-md)] p-4 flex flex-col gap-1.5"
-      style={{ background: "var(--surface-2)", border: "1px solid var(--border-hairline)" }}
+    <span
+      className="text-[12px] font-semibold px-2 py-0.5 rounded-full inline-block whitespace-nowrap"
+      style={{ color, background: `color-mix(in srgb, ${color} 16%, transparent)` }}
     >
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <span className="font-medium">{p.name}</span>
-        <span
-          className="tabular text-[12px] font-semibold px-2 py-0.5 rounded-full"
-          style={{ color: "var(--status-critical)", background: "color-mix(in srgb, var(--status-critical) 16%, transparent)" }}
-        >
-          0 продаж
-        </span>
-      </div>
-      <div className="text-[12px]" style={{ color: "var(--text-muted)" }}>
-        #{p.id} · {p.route}
-      </div>
-      <p className="text-[13px] mt-1" style={{ color: "var(--text-secondary)" }}>
-        За {p.departures} {p.departures === 1 ? "отправление" : "отправлений"} ({period}) не продано ни одного места
-        из {p.seats} доступных — заполняемость 0%. Тур ни разу не был куплен ни на одну из дат. Рекомендация: снять с
-        продажи или пересмотреть маршрут/цену/дни отправления, прежде чем ставить в план снова.
-      </p>
-    </div>
+      {REC_LABEL[recommendation]}
+    </span>
   );
 }
 
-function CannibalizedCard({ product, matches }: { product: TourProduct; matches: CannibalPair[] }) {
+function ClusterCard({ members, verdictById }: { members: TourProduct[]; verdictById: Map<string, TourVerdict> }) {
+  const sorted = [...members].sort((a, b) => b.sold - a.sold || b.ratio - a.ratio || b.seats - a.seats);
   return (
     <div
-      className="rounded-[var(--radius-md)] p-4 flex flex-col gap-1.5"
+      className="rounded-[var(--radius-md)] p-4 flex flex-col gap-3"
       style={{ background: "var(--surface-2)", border: "1px solid var(--border-hairline)" }}
     >
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <span className="font-medium">{product.name}</span>
-        <span
-          className="tabular text-[12px] font-semibold px-2 py-0.5 rounded-full"
-          style={{ color: "var(--status-warning)", background: "color-mix(in srgb, var(--status-warning) 16%, transparent)" }}
-        >
-          {matches.length === 1 ? "1 конфликт" : `${matches.length} конфликта(ов)`}
+        <span className="text-[13px] font-medium" style={{ color: "var(--text-muted)" }}>
+          Группа из {members.length} туров
         </span>
       </div>
-      <div className="text-[12px]" style={{ color: "var(--text-muted)" }}>
-        #{product.id} · {product.route}
-      </div>
-      <ul className="flex flex-col gap-1.5 mt-1">
-        {matches.map((pair, i) => {
-          const opponent = opponentOf(pair, product.id);
-          const isVictim = pair.victim.id === product.id;
-          const dateNote =
-            pair.sharedDates > 0
-              ? `${pair.sharedDates} из ${pair.minDepartures} общих дат отправления в один день`
-              : `${pair.nearDates} отправлений в пределах ±2 дней от дат конкурента`;
+      <div className="flex flex-col gap-2">
+        {sorted.map((p) => {
+          const verdict = verdictById.get(p.id);
+          if (!verdict) return null;
           return (
-            <li key={i} className="text-[13px]" style={{ color: "var(--text-secondary)" }}>
-              Конкурирует с «{opponent.name}» (#{opponent.id}): маршруты совпадают на {(pair.routeSim * 100).toFixed(0)}%,
-              и у туров есть {dateNote} — в эти дни покупатель выбирает между двумя почти одинаковыми турами
-              одновременно. У «{pair.survivor.name}» продано {pair.survivor.sold}, у «{pair.victim.name}» —{" "}
-              {pair.victim.sold}.{" "}
-              {pair.salesBasis ? (
-                <span style={{ color: isVictim ? "var(--status-critical)" : "var(--status-good)", fontWeight: 600 }}>
-                  {isVictim
-                    ? `Рекомендация: снять «${product.name}» с продажи в эти даты или переработать — покупатель уже выбирает «${opponent.name}».`
-                    : `Рекомендация: оставить «${product.name}», развести даты отправления либо снять «${opponent.name}».`}
-                </span>
-              ) : (
-                <span style={{ color: "var(--text-muted)", fontWeight: 600 }}>
-                  Недостаточно оснований для выбора тура на снятие, нет продаж ни у одного из туров — решение нужно
-                  принимать по другим критериям (цена, маршрут, сезон).
-                </span>
-              )}
-            </li>
+            <div key={p.id} className="rounded-[var(--radius-sm)] p-3" style={{ background: "var(--surface-1)" }}>
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <span className="font-medium">{p.name}</span>
+                <RecBadge recommendation={verdict.recommendation} />
+              </div>
+              <div className="text-[12px] mt-0.5" style={{ color: "var(--text-muted)" }}>
+                #{p.id} · {p.route}
+              </div>
+              <div className="tabular text-[12px] mt-0.5" style={{ color: "var(--text-secondary)" }}>
+                Продано {p.sold} из {p.seats} мест ({(p.ratio * 100).toFixed(1)}%)
+              </div>
+              <p className="text-[13px] mt-1.5" style={{ color: "var(--text-secondary)" }}>
+                {verdict.reason}
+              </p>
+            </div>
           );
         })}
-      </ul>
+      </div>
     </div>
   );
 }
 
-function LowSalesCard({ p }: { p: TourProduct }) {
-  const period = p.firstDate && p.lastDate ? `${p.firstDate} — ${p.lastDate}` : "даты неизвестны";
-  const unsold = p.seats - p.sold;
+function StandaloneCard({ verdict }: { verdict: TourVerdict }) {
+  const p = verdict.product;
   return (
     <div
       className="rounded-[var(--radius-md)] p-4 flex flex-col gap-1.5"
@@ -97,129 +76,226 @@ function LowSalesCard({ p }: { p: TourProduct }) {
     >
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <span className="font-medium">{p.name}</span>
-        <span
-          className="tabular text-[12px] font-semibold px-2 py-0.5 rounded-full"
-          style={{ color: "var(--status-serious)", background: "color-mix(in srgb, var(--status-serious) 16%, transparent)" }}
-        >
-          {(p.ratio * 100).toFixed(1)}% заполняемость
-        </span>
+        <RecBadge recommendation={verdict.recommendation} />
       </div>
       <div className="text-[12px]" style={{ color: "var(--text-muted)" }}>
         #{p.id} · {p.route}
       </div>
       <p className="text-[13px] mt-1" style={{ color: "var(--text-secondary)" }}>
-        За {p.departures} {p.departures === 1 ? "отправление" : "отправлений"} ({period}) продано {p.sold} из{" "}
-        {p.seats} мест — {unsold} мест простаивает, это самая дорогая проблема после нулевых продаж. Рекомендация:
-        снизить цену, изменить даты отправления или объединить с более сильным туром на этом направлении.
+        {verdict.reason}
       </p>
     </div>
   );
 }
 
-const LOW_SALES_DISPLAY_LIMIT = 20;
+type SortKey = "name" | "sold" | "seats" | "ratio" | "recommendation";
 
-export function ResultPanel({
-  products,
-  cannibalPairs,
-  lowSales,
-}: {
-  products: TourProduct[];
-  cannibalPairs: CannibalPair[];
-  lowSales: TourProduct[];
-}) {
-  // Ranked by wasted capacity (unsold seats), not an arbitrary order — that's
-  // the number closest to actual lost revenue we can compute without prices.
-  const zeroSales = useMemo(() => [...products.filter((p) => p.sold === 0)].sort((a, b) => b.seats - a.seats), [products]);
+const RANK: Record<Recommendation, number> = { remove_cannibal: 0, remove_zero: 1, keep: 2 };
 
-  const lowSalesRanked = useMemo(
-    () => [...lowSales].sort((a, b) => b.seats - b.sold - (a.seats - a.sold)),
-    [lowSales]
+export function ResultPanel({ verdicts }: { verdicts: TourVerdict[] }) {
+  const [filter, setFilter] = useState<Recommendation | "all">("all");
+  const [query, setQuery] = useState("");
+  const [sortKey, setSortKey] = useState<SortKey>("recommendation");
+  const [sortDir, setSortDir] = useState<1 | -1>(1);
+
+  const verdictById = useMemo(() => new Map(verdicts.map((v) => [v.product.id, v])), [verdicts]);
+
+  const clusters = useMemo(() => {
+    const byId = new Map<string, TourProduct[]>();
+    for (const v of verdicts) {
+      if (!v.clusterId || v.clusterMembers.length < 2) continue;
+      if (!byId.has(v.clusterId)) byId.set(v.clusterId, v.clusterMembers);
+    }
+    return [...byId.values()].sort((a, b) => {
+      const soldOf = (members: TourProduct[]) => members.reduce((s, m) => s + m.sold, 0);
+      return soldOf(b) - soldOf(a);
+    });
+  }, [verdicts]);
+
+  const standaloneRemoveZero = useMemo(
+    () =>
+      verdicts
+        .filter((v) => v.recommendation === "remove_zero")
+        .sort((a, b) => b.product.seats - a.product.seats),
+    [verdicts]
   );
 
-  const cannibalized = useMemo(() => {
-    // Exact same-day departures are the clearest conflict, but a departure a
-    // day or two apart still competes for the same buyer — include both.
-    const strongPairs = cannibalPairs.filter((p) => p.sharedDates > 0 || p.nearDates > 0);
-    const byId = new Map<string, { product: TourProduct; matches: CannibalPair[] }>();
-    for (const pair of strongPairs) {
-      for (const product of [pair.a, pair.b]) {
-        const entry = byId.get(product.id) ?? { product, matches: [] };
-        entry.matches.push(pair);
-        byId.set(product.id, entry);
-      }
-    }
-    return [...byId.values()].sort((x, y) => {
-      const impactOf = (entry: { product: TourProduct; matches: CannibalPair[] }) =>
-        entry.matches.reduce((s, m) => s + m.sharedDates * 2 + m.nearDates, 0);
-      return impactOf(y) - impactOf(x);
-    });
-  }, [cannibalPairs]);
+  const counts = useMemo(() => {
+    const c: Record<Recommendation, number> = { keep: 0, remove_zero: 0, remove_cannibal: 0 };
+    for (const v of verdicts) c[v.recommendation]++;
+    return c;
+  }, [verdicts]);
 
-  const nothingToShow = zeroSales.length === 0 && cannibalized.length === 0 && lowSalesRanked.length === 0;
+  const fullList = useMemo(() => {
+    let list = verdicts;
+    if (filter !== "all") list = list.filter((v) => v.recommendation === filter);
+    if (query.trim()) {
+      const q = query.trim().toLowerCase();
+      list = list.filter(
+        (v) => v.product.name.toLowerCase().includes(q) || v.product.route.toLowerCase().includes(q)
+      );
+    }
+    return [...list].sort((a, b) => {
+      if (sortKey === "name") return sortDir * a.product.name.localeCompare(b.product.name, "ru");
+      if (sortKey === "recommendation") {
+        return sortDir * (RANK[a.recommendation] - RANK[b.recommendation] || b.product.sold - a.product.sold);
+      }
+      return sortDir * (b.product[sortKey] - a.product[sortKey]);
+    });
+  }, [verdicts, filter, query, sortKey, sortDir]);
+
+  function toggleSort(key: SortKey) {
+    if (key === sortKey) setSortDir((d) => (d === 1 ? -1 : 1) as 1 | -1);
+    else {
+      setSortKey(key);
+      setSortDir(1);
+    }
+  }
+
+  const headers: { key: SortKey; label: string }[] = [
+    { key: "name", label: "Тур" },
+    { key: "seats", label: "Мест" },
+    { key: "sold", label: "Продано" },
+    { key: "ratio", label: "% продаж" },
+    { key: "recommendation", label: "Решение" },
+  ];
 
   return (
     <div className="flex flex-col gap-6">
-      {nothingToShow && (
-        <div className="card p-10 flex flex-col items-center gap-2 text-center">
-          <span className="text-[15px] font-medium">Проблем не найдено</span>
-          <span className="text-[13px]" style={{ color: "var(--text-secondary)" }}>
-            Нет туров с нулевыми или слабыми продажами и явной каннибализацией при текущих настройках порогов.
-          </span>
-        </div>
-      )}
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+        <StatTile label="Всего туров" value={String(verdicts.length)} />
+        <StatTile label="Оставить" value={String(counts.keep)} tone="good" />
+        <StatTile
+          label="Удалить"
+          value={String(counts.remove_zero + counts.remove_cannibal)}
+          hint={`${counts.remove_zero} без продаж · ${counts.remove_cannibal} каннибализация`}
+          tone="critical"
+        />
+      </div>
 
-      {zeroSales.length > 0 && (
+      {clusters.length > 0 && (
         <div className="card p-6 flex flex-col gap-4">
           <div>
-            <h2 className="text-[15px] font-semibold">Снять с продажи — 0 продаж ({zeroSales.length})</h2>
+            <h2 className="text-[15px] font-semibold">Группы каннибализации — кого оставить ({clusters.length})</h2>
             <p className="text-[12px] mt-1" style={{ color: "var(--text-muted)" }}>
-              Ни разу не куплены ни на одну дату отправления
+              Туры сгруппированы по пересечению дат отправления и схожести маршрута. Внутри группы оставлен тур с
+              наибольшими продажами, остальные — кандидаты на удаление.
             </p>
           </div>
-          <div className="flex flex-col gap-2">
-            {zeroSales.map((p) => (
-              <ZeroSalesCard key={p.id} p={p} />
+          <div className="flex flex-col gap-3">
+            {clusters.map((members) => (
+              <ClusterCard key={members.map((m) => m.id).join(",")} members={members} verdictById={verdictById} />
             ))}
           </div>
         </div>
       )}
 
-      {cannibalized.length > 0 && (
+      {standaloneRemoveZero.length > 0 && (
         <div className="card p-6 flex flex-col gap-4">
           <div>
-            <h2 className="text-[15px] font-semibold">Пойманы на сильной каннибализации ({cannibalized.length})</h2>
+            <h2 className="text-[15px] font-semibold">Без продаж, вне групп каннибализации ({standaloneRemoveZero.length})</h2>
             <p className="text-[12px] mt-1" style={{ color: "var(--text-muted)" }}>
-              Отправляются в те же даты или в пределах ±2 дней от почти идентичного по маршруту тура
+              Ни разу не куплены, и конкурирующего тура на эти же даты не найдено — проблема в спросе, а не в
+              конкуренции с другим туром
             </p>
           </div>
           <div className="flex flex-col gap-2">
-            {cannibalized.map(({ product, matches }) => (
-              <CannibalizedCard key={product.id} product={product} matches={matches} />
+            {standaloneRemoveZero.map((v) => (
+              <StandaloneCard key={v.product.id} verdict={v} />
             ))}
           </div>
         </div>
       )}
 
-      {lowSalesRanked.length > 0 && (
-        <div className="card p-6 flex flex-col gap-4">
+      <div className="card p-6 flex flex-col gap-4">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
-            <h2 className="text-[15px] font-semibold">Слабые продажи ({lowSalesRanked.length})</h2>
+            <h2 className="text-[15px] font-semibold">Полный список туров ({fullList.length})</h2>
             <p className="text-[12px] mt-1" style={{ color: "var(--text-muted)" }}>
-              Продавались, но ниже нижнего порога заполняемости — отсортированы по числу простаивающих мест
+              Что было и что с этим делать — по каждому туру
             </p>
           </div>
-          <div className="flex flex-col gap-2">
-            {lowSalesRanked.slice(0, LOW_SALES_DISPLAY_LIMIT).map((p) => (
-              <LowSalesCard key={p.id} p={p} />
-            ))}
+          <div className="flex items-center gap-2 flex-wrap">
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Поиск по названию или маршруту"
+              className="text-[13px] px-3 py-1.5 rounded-lg outline-none"
+              style={{ background: "var(--surface-2)", border: "1px solid var(--border-hairline)", color: "var(--text-primary)" }}
+            />
+            <select
+              value={filter}
+              onChange={(e) => setFilter(e.target.value as Recommendation | "all")}
+              className="text-[13px] px-3 py-1.5 rounded-lg outline-none"
+              style={{ background: "var(--surface-2)", border: "1px solid var(--border-hairline)", color: "var(--text-primary)" }}
+            >
+              <option value="all">Все решения</option>
+              <option value="keep">Оставить</option>
+              <option value="remove_cannibal">Удалить — каннибализация</option>
+              <option value="remove_zero">Удалить — нет продаж</option>
+            </select>
           </div>
-          {lowSalesRanked.length > LOW_SALES_DISPLAY_LIMIT && (
-            <p className="text-[12px] text-center" style={{ color: "var(--text-muted)" }}>
-              Показаны {LOW_SALES_DISPLAY_LIMIT} из {lowSalesRanked.length} — остальные см. на вкладке «Отчёт»
+        </div>
+
+        <div className="overflow-x-auto -mx-2">
+          <table className="w-full text-[13px] border-collapse table-fixed min-w-[820px]">
+            <colgroup>
+              <col style={{ width: "34%" }} />
+              <col style={{ width: "10%" }} />
+              <col style={{ width: "10%" }} />
+              <col style={{ width: "10%" }} />
+              <col style={{ width: "16%" }} />
+              <col style={{ width: "20%" }} />
+            </colgroup>
+            <thead>
+              <tr style={{ borderBottom: "1px solid var(--border-hairline)" }}>
+                {headers.map((h) => (
+                  <th
+                    key={h.key}
+                    onClick={() => toggleSort(h.key)}
+                    className={`font-medium px-2 py-2 cursor-pointer select-none whitespace-nowrap ${
+                      h.key === "name" ? "text-left" : "text-right"
+                    }`}
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    {h.label}
+                    {sortKey === h.key ? (sortDir === 1 ? " ↑" : " ↓") : ""}
+                  </th>
+                ))}
+                <th className="text-left font-medium px-2 py-2" style={{ color: "var(--text-muted)" }}>
+                  Причина
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {fullList.map((v) => (
+                <tr key={v.product.id} style={{ borderBottom: "1px solid var(--gridline)" }}>
+                  <td className="px-2 py-2 min-w-0">
+                    <div className="truncate font-medium">{v.product.name}</div>
+                    <div className="truncate text-[12px]" style={{ color: "var(--text-muted)" }} title={v.product.route}>
+                      #{v.product.id} · {v.product.route}
+                    </div>
+                  </td>
+                  <td className="tabular px-2 py-2 text-right">{v.product.seats}</td>
+                  <td className="tabular px-2 py-2 text-right">{v.product.sold}</td>
+                  <td className="tabular px-2 py-2 text-right font-medium">{(v.product.ratio * 100).toFixed(1)}%</td>
+                  <td className="px-2 py-2 text-right">
+                    <RecBadge recommendation={v.recommendation} />
+                  </td>
+                  <td className="px-2 py-2 text-[12px]" style={{ color: "var(--text-secondary)" }} title={v.reason}>
+                    <span className="line-clamp-2">{v.reason}</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {fullList.length === 0 && (
+            <p className="text-center py-8 text-[13px]" style={{ color: "var(--text-muted)" }}>
+              Ничего не найдено
             </p>
           )}
         </div>
-      )}
+      </div>
     </div>
   );
 }

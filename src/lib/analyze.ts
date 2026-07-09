@@ -1,6 +1,14 @@
 import { familyKey } from "./normalize";
 import { diceSimilarity } from "./similarity";
-import type { AnalysisResult, CannibalPair, PerformanceTier, RawRow, Thresholds, TourProduct } from "./types";
+import type {
+  AnalysisResult,
+  CannibalPair,
+  PerformanceTier,
+  RawRow,
+  Thresholds,
+  TourProduct,
+  TourVerdict,
+} from "./types";
 
 export const DEFAULT_THRESHOLDS: Thresholds = {
   lowMax: 0.1,
@@ -159,6 +167,136 @@ function findCannibalPairs(products: TourProduct[], similarityMin: number): Cann
   );
 }
 
+function formatPct(ratio: number): string {
+  return `${(ratio * 100).toFixed(1)}%`;
+}
+
+function pluralDepartures(n: number): string {
+  return n === 1 ? "отправление" : "отправлений";
+}
+
+// Two tours can each show up as the closest competitor of a third without
+// directly overlapping themselves (A~B, B~C). Union-Find turns those chains
+// into one cluster, because they're really all fighting over the same slice
+// of buyers — keeping the single best seller and cutting the rest is a
+// cleaner call than deciding pair by pair.
+function buildClusters(products: TourProduct[], pairs: CannibalPair[]): Map<string, TourProduct[]> {
+  const parent = new Map<string, string>();
+  for (const p of products) parent.set(p.id, p.id);
+
+  function find(x: string): string {
+    let root = x;
+    while (parent.get(root) !== root) root = parent.get(root)!;
+    while (parent.get(x) !== root) {
+      const next = parent.get(x)!;
+      parent.set(x, root);
+      x = next;
+    }
+    return root;
+  }
+  function union(x: string, y: string) {
+    const rx = find(x);
+    const ry = find(y);
+    if (rx !== ry) parent.set(rx, ry);
+  }
+
+  // Only exact or near date overlap is treated as real, actionable
+  // competition — a route-text match alone (no date overlap at all) doesn't
+  // put two tours in front of the same buyer on the same trip.
+  for (const pair of pairs) {
+    if (pair.sharedDates > 0 || pair.nearDates > 0) union(pair.a.id, pair.b.id);
+  }
+
+  const clusters = new Map<string, TourProduct[]>();
+  for (const p of products) {
+    const root = find(p.id);
+    const list = clusters.get(root);
+    if (list) list.push(p);
+    else clusters.set(root, [p]);
+  }
+  return clusters;
+}
+
+function pickBestOfCluster(members: TourProduct[]): TourProduct {
+  return members.reduce((best, next) => {
+    const { survivor } = pickSurvivor(best, next);
+    return survivor;
+  });
+}
+
+// The full keep/remove call for every tour: group whatever cannibalizes each
+// other into clusters and name the best seller in each the one to keep; a
+// standalone tour with zero sales is cut for lack of demand, not competition;
+// everything else is fine as-is.
+function buildVerdicts(products: TourProduct[], pairs: CannibalPair[]): TourVerdict[] {
+  const clusters = buildClusters(products, pairs);
+
+  const membersById = new Map<string, { root: string; members: TourProduct[] }>();
+  for (const [root, members] of clusters) {
+    for (const member of members) membersById.set(member.id, { root, members });
+  }
+
+  return products.map((p): TourVerdict => {
+    const { root, members } = membersById.get(p.id) ?? { root: p.id, members: [p] };
+
+    if (members.length > 1) {
+      const survivor = pickBestOfCluster(members);
+      const rivalNames = members.filter((m) => m.id !== p.id).map((m) => m.name);
+
+      if (p.id === survivor.id) {
+        const zeroCaveat =
+          p.sold === 0
+            ? " Продаж пока нет ни у одного тура в группе — оцените, стоит ли сохранять направление вообще."
+            : "";
+        return {
+          product: p,
+          recommendation: "keep",
+          reason: `Лидер среди ${members.length} похожих туров, конкурирующих за одни даты (${rivalNames.join(
+            ", "
+          )}). Продано ${p.sold} из ${p.seats} мест (${formatPct(p.ratio)}) — больше, чем у конкурентов.${zeroCaveat} Рекомендация: оставить как основной вариант, остальные из группы снять или объединить с этим туром.`,
+          clusterId: root,
+          clusterMembers: members,
+          keptInstead: null,
+        };
+      }
+
+      return {
+        product: p,
+        recommendation: "remove_cannibal",
+        reason: `Конкурирует за тех же покупателей с «${survivor.name}» (#${survivor.id}), у которого больше продаж: ${survivor.sold} из ${survivor.seats} мест (${formatPct(
+          survivor.ratio
+        )}) против ${p.sold} из ${p.seats} (${formatPct(p.ratio)}) у этого тура. Рекомендация: снять с продажи или объединить с «${survivor.name}».`,
+        clusterId: root,
+        clusterMembers: members,
+        keptInstead: survivor,
+      };
+    }
+
+    if (p.sold === 0) {
+      const period = p.firstDate && p.lastDate ? `${p.firstDate} — ${p.lastDate}` : "даты неизвестны";
+      return {
+        product: p,
+        recommendation: "remove_zero",
+        reason: `За ${p.departures} ${pluralDepartures(p.departures)} (${period}) не продано ни одного места из ${p.seats} доступных. Конкурирующих туров на те же даты не найдено — проблема не в каннибализации, а в отсутствии спроса. Рекомендация: снять с продажи или пересмотреть маршрут/цену.`,
+        clusterId: null,
+        clusterMembers: [p],
+        keptInstead: null,
+      };
+    }
+
+    return {
+      product: p,
+      recommendation: "keep",
+      reason: `Продаётся без конфликтов: ${p.sold} из ${p.seats} мест (${formatPct(
+        p.ratio
+      )}), туров с пересечением дат и похожим маршрутом не найдено.`,
+      clusterId: null,
+      clusterMembers: [p],
+      keptInstead: null,
+    };
+  });
+}
+
 export function analyze(rows: RawRow[], thresholds: Thresholds = DEFAULT_THRESHOLDS): AnalysisResult {
   const { products, inconsistentIds } = buildProducts(rows);
 
@@ -170,6 +308,7 @@ export function analyze(rows: RawRow[], thresholds: Thresholds = DEFAULT_THRESHO
   }
 
   const cannibalPairs = findCannibalPairs(products, thresholds.similarityMin);
+  const verdicts = buildVerdicts(products, cannibalPairs);
 
   const totals = products.reduce(
     (acc, p) => ({ seats: acc.seats + p.seats, sold: acc.sold + p.sold }),
@@ -184,6 +323,7 @@ export function analyze(rows: RawRow[], thresholds: Thresholds = DEFAULT_THRESHO
     inconsistentIds,
     tiers,
     cannibalPairs,
+    verdicts,
     thresholds,
     totals,
   };

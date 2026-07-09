@@ -1,30 +1,14 @@
 import * as XLSX from "xlsx";
-import type { AnalysisResult, CannibalPair, TourProduct } from "./types";
+import type { AnalysisResult, CannibalPair, TourProduct, TourVerdict } from "./types";
 
-type Recommendation = { status: "Снять" | "Оставить"; reason: string };
+const STATUS_LABEL: Record<TourVerdict["recommendation"], string> = {
+  keep: "Оставить",
+  remove_zero: "Снять — нет продаж",
+  remove_cannibal: "Снять — каннибализация",
+};
 
-// A tour is a cut candidate if it never sold, or if it's the weaker side of an
-// explicit cannibalization conflict where sales actually decide the winner —
-// tie cases with no sales basis are left as "keep" (no evidence to cut them).
-function buildRecommendations(analysis: AnalysisResult): Map<string, Recommendation> {
-  const reco = new Map<string, Recommendation>();
-  for (const p of analysis.products) {
-    reco.set(p.id, { status: "Оставить", reason: "" });
-  }
-  for (const p of analysis.tiers.none) {
-    reco.set(p.id, { status: "Снять", reason: "0 продаж" });
-  }
-  for (const pair of analysis.cannibalPairs) {
-    const explicit = pair.sharedDates > 0 || pair.nearDates > 0;
-    if (!explicit || !pair.salesBasis) continue;
-    if (reco.get(pair.victim.id)?.status === "Снять") continue;
-    reco.set(pair.victim.id, { status: "Снять", reason: `каннибализация («${pair.survivor.name}»)` });
-  }
-  return reco;
-}
-
-function productRow(p: TourProduct, reco?: Map<string, Recommendation>) {
-  const r = reco?.get(p.id);
+function productRow(p: TourProduct, verdictById: Map<string, TourVerdict>) {
+  const v = verdictById.get(p.id);
   return {
     "№ тура": p.id,
     Название: p.name,
@@ -35,7 +19,7 @@ function productRow(p: TourProduct, reco?: Map<string, Recommendation>) {
     "% продаж": Number((p.ratio * 100).toFixed(1)),
     "Первая дата": p.firstDate ?? "",
     "Последняя дата": p.lastDate ?? "",
-    ...(r ? { Рекомендация: r.status, Причина: r.reason } : {}),
+    ...(v ? { Решение: STATUS_LABEL[v.recommendation], Причина: v.reason } : {}),
   };
 }
 
@@ -61,16 +45,18 @@ function cannibalRow(pair: CannibalPair) {
 
 export function exportAnalysisToXlsx(analysis: AnalysisResult, fileName = "tour-analysis.xlsx") {
   const wb = XLSX.utils.book_new();
-  const reco = buildRecommendations(analysis);
-  const cutCount = [...reco.values()].filter((r) => r.status === "Снять").length;
-  const keepCount = analysis.products.length - cutCount;
+  const verdictById = new Map(analysis.verdicts.map((v) => [v.product.id, v]));
+  const removeZeroCount = analysis.verdicts.filter((v) => v.recommendation === "remove_zero").length;
+  const removeCannibalCount = analysis.verdicts.filter((v) => v.recommendation === "remove_cannibal").length;
+  const keepCount = analysis.verdicts.filter((v) => v.recommendation === "keep").length;
 
   const overallSellThrough = analysis.totals.seats > 0 ? (analysis.totals.sold / analysis.totals.seats) * 100 : 0;
   const summarySheet = XLSX.utils.aoa_to_sheet([
     ["Показатель", "Значение"],
     ["Всего туров выставлено", analysis.uniqueIds],
-    ["Рекомендовано снять", cutCount],
     ["Рекомендовано оставить", keepCount],
+    ["Рекомендовано снять — нет продаж", removeZeroCount],
+    ["Рекомендовано снять — каннибализация", removeCannibalCount],
     ["Строк-отправлений", analysis.rawRowCount],
     ["Уникальных пар «имя+маршрут»", analysis.uniqueNameRoutePairs],
     ["Никогда не продавались", analysis.tiers.none.length],
@@ -87,7 +73,7 @@ export function exportAnalysisToXlsx(analysis: AnalysisResult, fileName = "tour-
   summarySheet["!cols"] = [{ wch: 32 }, { wch: 14 }];
   XLSX.utils.book_append_sheet(wb, summarySheet, "Сводка");
 
-  const productsSheet = XLSX.utils.json_to_sheet(analysis.products.map((p) => productRow(p, reco)));
+  const productsSheet = XLSX.utils.json_to_sheet(analysis.products.map((p) => productRow(p, verdictById)));
   productsSheet["!cols"] = [
     { wch: 10 },
     { wch: 36 },
@@ -98,20 +84,20 @@ export function exportAnalysisToXlsx(analysis: AnalysisResult, fileName = "tour-
     { wch: 9 },
     { wch: 12 },
     { wch: 12 },
-    { wch: 12 },
-    { wch: 30 },
+    { wch: 20 },
+    { wch: 60 },
   ];
   XLSX.utils.book_append_sheet(wb, productsSheet, "Туры");
 
   const zeroSales = analysis.tiers.none;
   if (zeroSales.length) {
-    const zeroSheet = XLSX.utils.json_to_sheet(zeroSales.map((p) => productRow(p, reco)));
+    const zeroSheet = XLSX.utils.json_to_sheet(zeroSales.map((p) => productRow(p, verdictById)));
     XLSX.utils.book_append_sheet(wb, zeroSheet, "0 продаж");
   }
 
   const lowSales = [...analysis.tiers.low].sort((a, b) => b.seats - b.sold - (a.seats - a.sold));
   if (lowSales.length) {
-    const lowSheet = XLSX.utils.json_to_sheet(lowSales.map((p) => productRow(p, reco)));
+    const lowSheet = XLSX.utils.json_to_sheet(lowSales.map((p) => productRow(p, verdictById)));
     XLSX.utils.book_append_sheet(wb, lowSheet, "Слабые продажи");
   }
 

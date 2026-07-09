@@ -181,12 +181,7 @@ export default function Home() {
           </>
         )}
 
-        {tab === "result" &&
-          (hasData ? (
-            <ResultPanel products={analysis.products} cannibalPairs={analysis.cannibalPairs} lowSales={analysis.tiers.low} />
-          ) : (
-            <EmptyState />
-          ))}
+        {tab === "result" && (hasData ? <ResultPanel verdicts={analysis.verdicts} /> : <EmptyState />)}
 
         {tab === "report" && (hasData ? (
           <>

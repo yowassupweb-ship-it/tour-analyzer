@@ -43,6 +43,20 @@ export type Thresholds = {
   similarityMin: number;
 };
 
+// The final keep/remove call for one tour, after grouping every tour it
+// cannibalizes (directly or transitively) into one cluster and picking the
+// best seller in that cluster as the one to keep.
+export type Recommendation = "keep" | "remove_zero" | "remove_cannibal";
+
+export type TourVerdict = {
+  product: TourProduct;
+  recommendation: Recommendation;
+  reason: string;
+  clusterId: string | null;
+  clusterMembers: TourProduct[];
+  keptInstead: TourProduct | null;
+};
+
 export type AnalysisResult = {
   rawRowCount: number;
   products: TourProduct[];
@@ -51,6 +65,7 @@ export type AnalysisResult = {
   inconsistentIds: { id: string; names: string[]; routes: string[] }[];
   tiers: Record<PerformanceTier, TourProduct[]>;
   cannibalPairs: CannibalPair[];
+  verdicts: TourVerdict[];
   thresholds: Thresholds;
   totals: { seats: number; sold: number };
 };
