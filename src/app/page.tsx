@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import demoTours from "@/data/demo-tours.json";
 import { analyze, DEFAULT_THRESHOLDS } from "@/lib/analyze";
@@ -99,7 +100,12 @@ export default function Home() {
     <div className="flex-1" style={{ background: "var(--surface-0)" }}>
       <div className="mx-auto max-w-6xl px-6 py-10 flex flex-col gap-6">
         <header className="flex flex-col gap-1">
-          <h1 className="text-[26px] font-semibold tracking-tight">Анализ продаж туров</h1>
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <h1 className="text-[26px] font-semibold tracking-tight">Анализ продаж туров</h1>
+            <Link href="/v2" className="text-[13px] font-medium" style={{ color: "var(--series-blue)" }}>
+              Analyzer v2 →
+            </Link>
+          </div>
           <p className="text-[14px]" style={{ color: "var(--text-secondary)" }}>
             Загрузите таблицу (имя / маршрут / № тура / дата / мест в продажу / продано) — приложение нормализует
             данные, сгруппирует по номеру тура и найдёт похожие туры и уровень продаж.
