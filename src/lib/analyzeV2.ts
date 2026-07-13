@@ -16,7 +16,7 @@ export type RawRowV2 = {
   sold: number; // Продано
 };
 
-export type DecisionV2 = "FORCE_DELETE" | "KEEP_EVENT" | "OPTIMIZE_CANNIBAL" | "KEEP_LEADER" | "REVISE";
+export type DecisionV2 = "FORCE_DELETE" | "KEEP_EVENT" | "OPTIMIZE_CANNIBAL" | "KEEP_LEADER" | "REVISE" | "TOO_EARLY";
 export type SeoActionV2 = "NOINDEX" | "MANUAL_SEO" | "CANONICAL" | "AUTO_TEMPLATE";
 
 export type TourVerdictV2 = {
@@ -26,6 +26,7 @@ export type TourVerdictV2 = {
   isEvent: boolean;
   cannibalPenalty: number;
   finalScore: number;
+  daysUntilDeparture: number;
   decision: DecisionV2;
   seoAction: SeoActionV2;
   canonicalTarget: RawRowV2 | null;
@@ -45,9 +46,21 @@ const LF_EVENT_SUCCESS = 0.5;
 const FINAL_SCORE_CANNIBAL = 0.45;
 const FINAL_SCORE_LEADER = 0.6;
 
+// "Rise-in" window: Rule 1 is a hard stop "независимо от причин", but a
+// departure 4+ months out with 0% sold isn't dead — bookings usually land
+// closer to the date. Dates further out than this get a wait-and-see verdict
+// instead of FORCE_DELETE; dates inside the window still get the hard stop.
+const RISE_IN_WINDOW_DAYS = 30;
+
 export function seasonOf(dateIso: string): SeasonV2 {
   const month = Number(dateIso.slice(5, 7));
   return month >= 4 && month <= 10 ? "Лето" : "Зима";
+}
+
+function daysUntil(dateIso: string, today: Date): number {
+  const target = Date.UTC(Number(dateIso.slice(0, 4)), Number(dateIso.slice(5, 7)) - 1, Number(dateIso.slice(8, 10)));
+  const todayMidnight = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+  return Math.round((target - todayMidnight) / 86_400_000);
 }
 
 // "Уникальные слова-локации": every dash-separated stop, further split on
@@ -112,27 +125,35 @@ function computeCannibalPenalties(
     else byDate.set(row.departureDate, [row]);
   }
 
+  // Per row (not per pair): find the qualifying opponent with the highest
+  // LF — that's literally "тур-лидер с максимальным LF в эту дату" from the
+  // rule 3 SEO directive — and penalize this row against *that* one if it
+  // outsells it. Keeps the canonical target and the penalty tied to the
+  // same opponent instead of two different pairwise comparisons.
   for (const group of byDate.values()) {
-    for (let i = 0; i < group.length; i++) {
-      for (let j = i + 1; j < group.length; j++) {
-        const a = group[i];
-        const b = group[j];
-        if (Math.abs(a.durationDays - b.durationDays) > DURATION_DIFF_MAX) continue;
+    for (const row of group) {
+      const rowLf = loadFactor(row);
+      let bestOpponent: RawRowV2 | null = null;
+      let bestOpponentSim = 0;
+      let bestOpponentLf = -Infinity;
 
-        const sim = jaccardSimilarity(a.route, b.route);
+      for (const other of group) {
+        if (other === row) continue;
+        if (Math.abs(row.durationDays - other.durationDays) > DURATION_DIFF_MAX) continue;
+
+        const sim = jaccardSimilarity(row.route, other.route);
         if (sim <= JACCARD_THRESHOLD) continue;
 
-        const lfA = loadFactor(a);
-        const lfB = loadFactor(b);
-        const penalty = sim * CANNIBAL_PENALTY_FACTOR;
-        const loser = lfA < lfB ? a : lfA > lfB ? b : null;
-        const winner = loser === a ? b : loser === b ? a : null;
-        if (!loser || !winner) continue;
-
-        const current = result.get(loser)!;
-        if (penalty > current.penalty) {
-          result.set(loser, { penalty, leader: winner });
+        const otherLf = loadFactor(other);
+        if (otherLf > bestOpponentLf) {
+          bestOpponent = other;
+          bestOpponentSim = sim;
+          bestOpponentLf = otherLf;
         }
+      }
+
+      if (bestOpponent && bestOpponentLf > rowLf) {
+        result.set(row, { penalty: bestOpponentSim * CANNIBAL_PENALTY_FACTOR, leader: bestOpponent });
       }
     }
   }
@@ -140,15 +161,40 @@ function computeCannibalPenalties(
   return result;
 }
 
-function decide(lf: number, isEvent: boolean, cannibalPenalty: number, finalScore: number): { decision: DecisionV2; seoAction: SeoActionV2 } {
-  if (lf < LF_HARD_STOP) return { decision: "FORCE_DELETE", seoAction: "NOINDEX" };
+function decide(
+  lf: number,
+  isEvent: boolean,
+  cannibalPenalty: number,
+  finalScore: number,
+  daysUntilDeparture: number
+): { decision: DecisionV2; seoAction: SeoActionV2 } {
+  if (lf < LF_HARD_STOP) {
+    if (daysUntilDeparture > RISE_IN_WINDOW_DAYS) return { decision: "TOO_EARLY", seoAction: "AUTO_TEMPLATE" };
+    return { decision: "FORCE_DELETE", seoAction: "NOINDEX" };
+  }
   if (isEvent && lf >= LF_EVENT_SUCCESS) return { decision: "KEEP_EVENT", seoAction: "MANUAL_SEO" };
   if (cannibalPenalty > 0 && finalScore < FINAL_SCORE_CANNIBAL) return { decision: "OPTIMIZE_CANNIBAL", seoAction: "CANONICAL" };
   if (finalScore >= FINAL_SCORE_LEADER) return { decision: "KEEP_LEADER", seoAction: "MANUAL_SEO" };
   return { decision: "REVISE", seoAction: "AUTO_TEMPLATE" };
 }
 
-export function analyzeV2(rows: RawRowV2[]): ReportV2 {
+// Step 2 of the spec: "сгруппируй туры по уникальному [Маршрут] и [Дата
+// выезда]" — source files assembled from multiple sheets/exports can list
+// the same route+date more than once (the same gap that made v1 merge
+// sheets by tour ID). Keep one record per (route, date): the one with the
+// most sold, since that's the most complete/current snapshot of the two.
+function dedupeByRouteAndDate(rows: RawRowV2[]): RawRowV2[] {
+  const byKey = new Map<string, RawRowV2>();
+  for (const row of rows) {
+    const key = `${row.route}__${row.departureDate}`;
+    const existing = byKey.get(key);
+    if (!existing || row.sold > existing.sold) byKey.set(key, row);
+  }
+  return [...byKey.values()];
+}
+
+export function analyzeV2(rawRows: RawRowV2[], today: Date = new Date()): ReportV2 {
+  const rows = dedupeByRouteAndDate(rawRows);
   const isEvent = computeEventFlags(rows);
   const penalties = computeCannibalPenalties(rows, isEvent);
 
@@ -157,7 +203,8 @@ export function analyzeV2(rows: RawRowV2[]): ReportV2 {
     const event = isEvent.get(row) ?? false;
     const { penalty, leader } = penalties.get(row) ?? { penalty: 0, leader: null };
     const finalScore = lf - penalty;
-    const { decision, seoAction } = decide(lf, event, penalty, finalScore);
+    const daysUntilDeparture = daysUntil(row.departureDate, today);
+    const { decision, seoAction } = decide(lf, event, penalty, finalScore, daysUntilDeparture);
 
     return {
       row,
@@ -166,6 +213,7 @@ export function analyzeV2(rows: RawRowV2[]): ReportV2 {
       isEvent: event,
       cannibalPenalty: penalty,
       finalScore,
+      daysUntilDeparture,
       decision,
       seoAction,
       canonicalTarget: decision === "OPTIMIZE_CANNIBAL" ? leader : null,

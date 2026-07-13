@@ -51,9 +51,9 @@ export function InsightsV2({ report }: { report: ReportV2 }) {
             </p>
           ) : (
             <ul className="flex flex-col gap-1.5">
-              {report.focusAttention.map((v) => (
+              {report.focusAttention.map((v, i) => (
                 <li
-                  key={`${v.row.tourId}-${v.row.departureDate}`}
+                  key={`${v.row.tourId}-${v.row.departureDate}-${i}`}
                   className="text-[13px] rounded-[var(--radius-sm)] px-3 py-2"
                   style={{ background: "var(--surface-2)", border: "1px solid var(--border-hairline)", color: "var(--text-secondary)" }}
                 >

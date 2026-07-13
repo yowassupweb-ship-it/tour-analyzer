@@ -122,12 +122,13 @@ export default function HomeV2() {
         />
 
         {hasData && (
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
             <StatTile label="Всего туров" value={String(report.rows.length)} />
-            <StatTile label="FORCE_DELETE" value={String(counts.FORCE_DELETE ?? 0)} tone="critical" />
-            <StatTile label="OPTIMIZE_CANNIBAL" value={String(counts.OPTIMIZE_CANNIBAL ?? 0)} tone="warning" />
-            <StatTile label="KEEP_LEADER / EVENT" value={String((counts.KEEP_LEADER ?? 0) + (counts.KEEP_EVENT ?? 0))} tone="good" />
-            <StatTile label="REVISE" value={String(counts.REVISE ?? 0)} />
+            <StatTile label="Удалить (FORCE_DELETE)" value={String(counts.FORCE_DELETE ?? 0)} tone="critical" />
+            <StatTile label="Оптимизировать (OPTIMIZE_CANNIBAL)" value={String(counts.OPTIMIZE_CANNIBAL ?? 0)} tone="warning" />
+            <StatTile label="Рано судить (TOO_EARLY)" value={String(counts.TOO_EARLY ?? 0)} />
+            <StatTile label="Оставить (KEEP_LEADER / EVENT)" value={String((counts.KEEP_LEADER ?? 0) + (counts.KEEP_EVENT ?? 0))} tone="good" />
+            <StatTile label="Пересмотреть (REVISE)" value={String(counts.REVISE ?? 0)} />
           </div>
         )}
 

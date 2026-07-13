@@ -3,12 +3,20 @@
 import { useMemo, useState } from "react";
 import type { DecisionV2, SeoActionV2, TourVerdictV2 } from "@/lib/analyzeV2";
 
-const DECISION_LABEL: Record<DecisionV2, string> = {
-  FORCE_DELETE: "FORCE_DELETE",
-  KEEP_EVENT: "KEEP_EVENT",
-  OPTIMIZE_CANNIBAL: "OPTIMIZE_CANNIBAL",
-  KEEP_LEADER: "KEEP_LEADER",
-  REVISE: "REVISE",
+const DECISION_RU: Record<DecisionV2, string> = {
+  FORCE_DELETE: "Удалить",
+  KEEP_EVENT: "Оставить (событие)",
+  OPTIMIZE_CANNIBAL: "Оптимизировать",
+  KEEP_LEADER: "Оставить (лидер)",
+  REVISE: "Пересмотреть",
+  TOO_EARLY: "Рано судить",
+};
+
+const SEO_RU: Record<SeoActionV2, string> = {
+  NOINDEX: "Скрыть из поиска",
+  MANUAL_SEO: "Ручной SEO",
+  CANONICAL: "Канонический URL",
+  AUTO_TEMPLATE: "Авто-шаблон",
 };
 
 const DECISION_COLOR: Record<DecisionV2, string> = {
@@ -17,6 +25,7 @@ const DECISION_COLOR: Record<DecisionV2, string> = {
   OPTIMIZE_CANNIBAL: "var(--status-warning)",
   KEEP_LEADER: "var(--status-good)",
   REVISE: "var(--text-muted)",
+  TOO_EARLY: "var(--series-blue)",
 };
 
 const SEO_COLOR: Record<SeoActionV2, string> = {
@@ -26,14 +35,19 @@ const SEO_COLOR: Record<SeoActionV2, string> = {
   AUTO_TEMPLATE: "var(--text-muted)",
 };
 
-function Badge({ label, color }: { label: string; color: string }) {
+// Russian reads first and larger — that's the actual decision a human acts
+// on; the English enum rides underneath as the technical value (what
+// actually gets written to the CMS field).
+function Badge({ ruLabel, enLabel, color }: { ruLabel: string; enLabel: string; color: string }) {
   return (
-    <span
-      className="text-[12px] font-semibold px-2 py-0.5 rounded-full inline-block whitespace-nowrap"
-      style={{ color, background: `color-mix(in srgb, ${color} 16%, transparent)` }}
-    >
-      {label}
-    </span>
+    <div className="inline-flex flex-col gap-0.5">
+      <span className="text-[13px] font-semibold leading-tight" style={{ color }}>
+        {ruLabel}
+      </span>
+      <span className="tabular text-[10px] font-medium uppercase tracking-wide leading-tight" style={{ color: "var(--text-muted)" }}>
+        {enLabel}
+      </span>
+    </div>
   );
 }
 
@@ -43,8 +57,9 @@ const DECISION_RANK: Record<DecisionV2, number> = {
   FORCE_DELETE: 0,
   OPTIMIZE_CANNIBAL: 1,
   REVISE: 2,
-  KEEP_LEADER: 3,
-  KEEP_EVENT: 4,
+  TOO_EARLY: 3,
+  KEEP_LEADER: 4,
+  KEEP_EVENT: 5,
 };
 
 export function ReportTableV2({ verdicts }: { verdicts: TourVerdictV2[] }) {
@@ -112,11 +127,12 @@ export function ReportTableV2({ verdicts }: { verdicts: TourVerdictV2[] }) {
               style={{ background: "var(--surface-2)", border: "1px solid var(--border-hairline)", color: "var(--text-primary)" }}
             >
               <option value="all">Все решения</option>
-              <option value="FORCE_DELETE">FORCE_DELETE</option>
-              <option value="OPTIMIZE_CANNIBAL">OPTIMIZE_CANNIBAL</option>
-              <option value="REVISE">REVISE</option>
-              <option value="KEEP_LEADER">KEEP_LEADER</option>
-              <option value="KEEP_EVENT">KEEP_EVENT</option>
+              <option value="FORCE_DELETE">{DECISION_RU.FORCE_DELETE} (FORCE_DELETE)</option>
+              <option value="OPTIMIZE_CANNIBAL">{DECISION_RU.OPTIMIZE_CANNIBAL} (OPTIMIZE_CANNIBAL)</option>
+              <option value="REVISE">{DECISION_RU.REVISE} (REVISE)</option>
+              <option value="TOO_EARLY">{DECISION_RU.TOO_EARLY} (TOO_EARLY)</option>
+              <option value="KEEP_LEADER">{DECISION_RU.KEEP_LEADER} (KEEP_LEADER)</option>
+              <option value="KEEP_EVENT">{DECISION_RU.KEEP_EVENT} (KEEP_EVENT)</option>
             </select>
           </div>
         </div>
@@ -125,11 +141,11 @@ export function ReportTableV2({ verdicts }: { verdicts: TourVerdictV2[] }) {
           <table className="w-full text-[13px] border-collapse table-fixed min-w-[900px]">
             <colgroup>
               <col style={{ width: "10%" }} />
-              <col style={{ width: "26%" }} />
+              <col style={{ width: "24%" }} />
               <col style={{ width: "12%" }} />
               <col style={{ width: "9%" }} />
-              <col style={{ width: "17%" }} />
-              <col style={{ width: "26%" }} />
+              <col style={{ width: "20%" }} />
+              <col style={{ width: "25%" }} />
             </colgroup>
             <thead>
               <tr style={{ borderBottom: "1px solid var(--border-hairline)" }}>
@@ -159,8 +175,8 @@ export function ReportTableV2({ verdicts }: { verdicts: TourVerdictV2[] }) {
               </tr>
             </thead>
             <tbody>
-              {rows.map((v) => (
-                <tr key={`${v.row.tourId}-${v.row.departureDate}`} style={{ borderBottom: "1px solid var(--gridline)" }}>
+              {rows.map((v, i) => (
+                <tr key={`${v.row.tourId}-${v.row.departureDate}-${i}`} style={{ borderBottom: "1px solid var(--gridline)" }}>
                   <td className="tabular px-2 py-2 text-right">{v.row.tourId}</td>
                   <td className="px-2 py-2 min-w-0">
                     <div className="truncate font-medium">{v.row.routeName}</div>
@@ -172,12 +188,12 @@ export function ReportTableV2({ verdicts }: { verdicts: TourVerdictV2[] }) {
                   <td className="tabular px-2 py-2 text-right whitespace-nowrap">{v.row.departureDate}</td>
                   <td className="tabular px-2 py-2 text-right font-medium">{(v.lf * 100).toFixed(1)}%</td>
                   <td className="px-2 py-2">
-                    <Badge label={DECISION_LABEL[v.decision]} color={DECISION_COLOR[v.decision]} />
+                    <Badge ruLabel={DECISION_RU[v.decision]} enLabel={v.decision} color={DECISION_COLOR[v.decision]} />
                   </td>
                   <td className="px-2 py-2">
-                    <Badge label={v.seoAction} color={SEO_COLOR[v.seoAction]} />
+                    <Badge ruLabel={SEO_RU[v.seoAction]} enLabel={v.seoAction} color={SEO_COLOR[v.seoAction]} />
                     {v.canonicalTarget && (
-                      <span className="text-[12px] ml-1.5" style={{ color: "var(--text-muted)" }}>
+                      <span className="text-[12px] block mt-0.5" style={{ color: "var(--text-muted)" }}>
                         → #{v.canonicalTarget.tourId}
                       </span>
                     )}
